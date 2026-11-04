@@ -1,0 +1,21 @@
+{
+  "split_seed": 20261104,
+  "ratios": {
+    "training": 0.7,
+    "validation": 0.15,
+    "testing": 0.15
+  },
+  "unit": "background scenario with both EV variants",
+  "shared_seed_policy": "same numeric generator seed across demands in the same partition",
+  "shared_seed_count": 70,
+  "shared_seed_allocation": {
+    "training": 49,
+    "validation": 11,
+    "testing": 10
+  },
+  "destination": "new_env/",
+  "operation": "copy; retain sources",
+  "included": "300 general and 600 EV .rou.xml files",
+  "excluded": "EV trips, goals, network, SUMO configs and RP code changes",
+  "packaging_note": "Source machine paths removed; route and goal bytes retained"
+}

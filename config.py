@@ -1,0 +1,43 @@
+"""Compatibility shim; new code should import from :mod:`rp.experiment`."""
+
+from rp.experiment.config import (
+    PROJECT_DIR,
+    ENV_CHOICES,
+    build_new_env_config,
+    build_selected_env_config,
+    validate_environment_inputs,
+    RP_VARIANT_CHOICES,
+    RP_VARIANT_SPECS,
+    EnvironmentConfig,
+    RPVariantSpec,
+    RuntimeConfig,
+    SumoPaths,
+    TrainingSchedule,
+    build_env_config,
+    build_small_env_config,
+    build_static_env_config,
+    resolve_rp_variant_spec,
+    resolve_sumo_config,
+    resolve_sumo_home,
+)
+
+__all__ = [
+    "PROJECT_DIR",
+    "ENV_CHOICES",
+    "build_new_env_config",
+    "build_selected_env_config",
+    "validate_environment_inputs",
+    "resolve_sumo_home",
+    "resolve_sumo_config",
+    "RPVariantSpec",
+    "RP_VARIANT_SPECS",
+    "RP_VARIANT_CHOICES",
+    "resolve_rp_variant_spec",
+    "SumoPaths",
+    "TrainingSchedule",
+    "EnvironmentConfig",
+    "RuntimeConfig",
+    "build_small_env_config",
+    "build_env_config",
+    "build_static_env_config",
+]

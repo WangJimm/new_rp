@@ -1,0 +1,10 @@
+# Install torch separately for your CPU/CUDA build; see README.
+# NumPy 1.x preserves the NumPy bridge used by torch 2.3.1.
+numpy==1.26.4
+torch-geometric==2.6.1
+matplotlib==3.11.1
+tqdm==4.70.0
+tensorboard==2.21.0
+eclipse-sumo==1.24.0
+sumolib==1.24.0
+traci==1.24.0

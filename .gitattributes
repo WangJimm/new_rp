@@ -1,0 +1,2 @@
+* text=auto eol=lf
+new_env/** -text

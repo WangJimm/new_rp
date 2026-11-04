@@ -1,0 +1,32 @@
+# Local environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+# Training state and generated outputs
+outputs/
+logs/
+runs/
+comparison_results/
+tmp/
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.pickle
+*.bak*
+# Credentials and local IDE settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# Optional original Brooklyn dataset (not part of this new_env package)
+env/
+small_env/
