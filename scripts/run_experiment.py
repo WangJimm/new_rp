@@ -13,6 +13,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+# Training and evaluation only save plots; never create a Tk/Qt GUI.
+import matplotlib
+matplotlib.use("Agg", force=True)
+
 import traci
 import numpy as np
 import torch
