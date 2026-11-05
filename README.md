@@ -94,8 +94,27 @@ proposed 的完整到達率最低成本 checkpoint，需 validation 全部 EV �
 
 其他方法如 `ppo_torch_baseline` 不需要 Ray；`ppo_baseline` 為 RLlib 版本，需要另外安裝相容的 Ray/RLlib，未納入此預設環境。
 
-本次只做靜態語法、相依來源與資料完整性檢查，未執行訓練、SUMO、套件安裝或完整測試套件。依系統與硬體差異，不保證不同設備達成逐位元相同的訓練結果。
+已通過純 Agg PNG 繪圖（包含工作執行緒及垃圾回收）與既有工具相容性測試，並完成語法與資料完整性檢查。未執行訓練、SUMO、套件安裝或完整測試套件。依系統與硬體差異，不保證不同設備達成逐位元相同的訓練結果。
 
 Linux 可使用同一份程式與安裝器，執行路徑改為 `.venv/bin/python`；主要交付流程以 Windows 為主。
 
 資料來源與授權資訊見 [DATA_NOTICE.md](DATA_NOTICE.md)。安裝指令參考 [PyTorch 官方舊版本](https://pytorch.org/get-started/previous-versions/) 與 [SUMO 官方 Python 安裝說明](https://sumo.dlr.de/docs/Downloads.php#python-packages--virtual-environments)。
+
+## 繪圖崩潰修正與續訓
+
+訓練與 validation 只輸出 PNG，啟動時固定 Agg；simple_plot 直接使用 FigureCanvasAgg，不建立 Tk/Qt 視窗。此設定不影響 SUMO-GUI。
+
+若舊版在 validation 開始時出現 Tkinter `main thread is not in main loop` / `Tcl_AsyncDelete`，更新程式後啟動新 Python process，並使用完整狀態續訓：
+
+```powershell
+& '.\.venv\Scripts\python.exe' -m scripts.run_experiment --env new_env --rp_variant proposed --resume-state '.\outputs\new_env\proposed\training_state_latest.pt'
+```
+
+完整續訓保留模型、optimizer、replay、場景排程和已記錄的指標。只載入 tmp_file.pt 不等同完整續訓。
+若想先單獨檢查中斷時的模型，可執行：
+
+```powershell
+& '.\.venv\Scripts\python.exe' -m scripts.validation --env new_env --rp_variant proposed --checkpoint '.\outputs\new_env\proposed\tmp_file.pt' --output '.\outputs\new_env\proposed\recovery_validation_result.json'
+```
+
+validation 不會因改用 Agg 而更動場景、goal、到達率門檻或評估公式。此修正已做繪圖回歸測試，完整 90 場景動態 validation 仍需由實際訓練／驗證執行確認。

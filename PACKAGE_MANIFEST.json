@@ -13,39 +13,9 @@
       "sha256": "b1f3273bbd80f2788c84da1227c56d690c3f5d666e38b697501c8fa7221ef117"
     },
     {
-      "path": "compare_training_rewards_to_dijkstra.py",
-      "bytes": 507,
-      "sha256": "9a25b6e4014f815bfd254465c7d302cc9006cae37975f13aae1684c05a24a991"
-    },
-    {
-      "path": "config.py",
-      "bytes": 1013,
-      "sha256": "08278da51cb479ed545e3071b3bcc4dd75425c44aced7024ac433d2347651e86"
-    },
-    {
-      "path": "constraints.txt",
-      "bytes": 27,
-      "sha256": "2b8272b07e6006e650c1956e7d043ce8e2ec9b808de84523c8f0ab44b19877c6"
-    },
-    {
       "path": "DATA_NOTICE.md",
       "bytes": 792,
       "sha256": "8ff5ca266f236b8a6d1a4c5392b0d4157b89a490082b48a55f2f56c628044ea0"
-    },
-    {
-      "path": "debug_utils.py",
-      "bytes": 192,
-      "sha256": "c2a4920a4dc192b1a71c8257f78a6a8abc18112fcf8ce121d644223cf4b8f917"
-    },
-    {
-      "path": "decision_helpers.py",
-      "bytes": 249,
-      "sha256": "14be2d92d277aff3eaa3ebeae70f9b394eb3eecc0af803e35e9064d212436fb0"
-    },
-    {
-      "path": "dijkstra_refactored.py",
-      "bytes": 800,
-      "sha256": "0610d00a5a44b4f4fc1cef0d46171597870b89bea3030932620bb39abf374c8f"
     },
     {
       "path": "DQN/__init__.py",
@@ -96,6 +66,41 @@
       "path": "DQN/sacd.py",
       "bytes": 24186,
       "sha256": "420840edaa68beff846098345aa4e18c952c6ce65dde26037fa7b68f4ea7d741"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6193,
+      "sha256": "190f5a2f5911bc7dc427e0d3c729cefc803770eb5fc7b0d3da7269a210dfec0a"
+    },
+    {
+      "path": "compare_training_rewards_to_dijkstra.py",
+      "bytes": 507,
+      "sha256": "9a25b6e4014f815bfd254465c7d302cc9006cae37975f13aae1684c05a24a991"
+    },
+    {
+      "path": "config.py",
+      "bytes": 1013,
+      "sha256": "08278da51cb479ed545e3071b3bcc4dd75425c44aced7024ac433d2347651e86"
+    },
+    {
+      "path": "constraints.txt",
+      "bytes": 27,
+      "sha256": "2b8272b07e6006e650c1956e7d043ce8e2ec9b808de84523c8f0ab44b19877c6"
+    },
+    {
+      "path": "debug_utils.py",
+      "bytes": 192,
+      "sha256": "c2a4920a4dc192b1a71c8257f78a6a8abc18112fcf8ce121d644223cf4b8f917"
+    },
+    {
+      "path": "decision_helpers.py",
+      "bytes": 249,
+      "sha256": "14be2d92d277aff3eaa3ebeae70f9b394eb3eecc0af803e35e9064d212436fb0"
+    },
+    {
+      "path": "dijkstra_refactored.py",
+      "bytes": 800,
+      "sha256": "0610d00a5a44b4f4fc1cef0d46171597870b89bea3030932620bb39abf374c8f"
     },
     {
       "path": "episode_runner.py",
@@ -7703,11 +7708,6 @@
       "sha256": "fbf7d2cfd7f3194c2c288002cca71c0dfbfdce199953eb040a87d7c1f7a47785"
     },
     {
-      "path": "README.md",
-      "bytes": 4940,
-      "sha256": "feed93dbf5966f410b266005f2d1a55476caf76e30f195334ab932bdaf45b2f8"
-    },
-    {
       "path": "requirements.txt",
       "bytes": 264,
       "sha256": "67007bf40dce44eef7d28364af1b55848c1cc182968c517e22ac7e47f15d9369"
@@ -7809,8 +7809,8 @@
     },
     {
       "path": "rp/reporting/plotting.py",
-      "bytes": 634,
-      "sha256": "4b08f31ad23fd3c929133b5db93623ab4a3223eaabf285a4a3f3b2a984c4befd"
+      "bytes": 1363,
+      "sha256": "cfae5f5f48565819ffe4b1a3f357ea73a2698438d8ca46cbb40aeab46afcc603"
     },
     {
       "path": "rp/routing/__init__.py",
@@ -7934,8 +7934,8 @@
     },
     {
       "path": "scripts/run_experiment.py",
-      "bytes": 109008,
-      "sha256": "eb4e8f723e39ef8e1e747833a549893573d9279a5ca3b8fe6195c342751e3e82"
+      "bytes": 109130,
+      "sha256": "f724c2c3d6684712382c350a9f1cdfb6cd2ae77dea31af7637ba392890b627f3"
     },
     {
       "path": "scripts/summarize_teleports.py",
@@ -8016,6 +8016,11 @@
       "path": "tests/test_graph_features.py",
       "bytes": 16050,
       "sha256": "68dd6397296b16fa856ee9747b7f9acf279e34d3ced0312f352137f0f8cf1abc"
+    },
+    {
+      "path": "tests/test_headless_plotting.py",
+      "bytes": 4153,
+      "sha256": "051e780591d1b7af2ad5ed1c00e06b9852d0e741e8ca1ccf37a630277aa91087"
     },
     {
       "path": "tests/test_legacy_dijkstra_sim.py",
