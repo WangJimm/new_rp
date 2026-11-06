@@ -329,6 +329,7 @@ def restart_sumo_after_save(config: RuntimeConfig, enabled: bool, reason: str) -
 
 def describe_runtime(config: RuntimeConfig) -> str:
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    validation_start, validation_interval = resolve_training_validation_schedule(config)
     return (
         f"env={config.environment.name}, "
         f"data={config.paths.run_dir}, "
@@ -336,6 +337,8 @@ def describe_runtime(config: RuntimeConfig) -> str:
         f"episodes={config.schedule.num_episodes}, "
         f"epsilon_warmup_end={config.schedule.warmup_end}, "
         f"epsilon_decay_end={config.schedule.training_end}, "
+        f"validation_start_episode={validation_start}, "
+        f"validation_interval={validation_interval}, "
         f"device={device}, "
         f"use_gnn={config.use_gnn}, "
         f"revisit_penalty={config.revisit_penalty if config.revisit_penalty_enabled else 'disabled'}, "
@@ -708,6 +711,37 @@ def training_schedule_settings(config: RuntimeConfig) -> dict[str, int]:
     }
 
 
+def resolve_training_validation_schedule(config: RuntimeConfig) -> tuple[int, int]:
+    """Return the first one-based validation episode and interval.
+
+    Omitted overrides preserve the original global-multiple schedule.
+    An explicit start anchors subsequent validations to that episode.
+    """
+    interval = getattr(config, "validation_interval", None)
+    if interval is None:
+        interval = max(1, config.schedule.num_episodes // 20)
+    if interval <= 0:
+        raise ValueError("--validation-interval must be positive.")
+    start = getattr(config, "validation_start_episode", None)
+    if start is None:
+        minimum = max(1, config.schedule.training_end)
+        start = ((minimum + interval - 1) // interval) * interval
+    if start <= 0:
+        raise ValueError("--validation-start-episode must be positive.")
+    return int(start), int(interval)
+
+
+def validation_schedule_settings(config: RuntimeConfig) -> dict[str, int]:
+    start, interval = resolve_training_validation_schedule(config)
+    return {"start_episode": start, "interval": interval}
+
+
+def training_validation_due(config: RuntimeConfig, episode: int) -> bool:
+    start, interval = resolve_training_validation_schedule(config)
+    completed = episode + 1
+    return completed >= start and (completed - start) % interval == 0
+
+
 def training_schedule_settings_match(config: RuntimeConfig, payload: dict[str, Any]) -> bool:
     saved = payload.get("training_schedule")
     if saved is None:
@@ -743,6 +777,7 @@ def save_training_completed_marker(
         "next_episode": int(next_episode),
         "num_episodes": int(config.schedule.num_episodes),
         "training_schedule": training_schedule_settings(config),
+        "validation_schedule": validation_schedule_settings(config),
         "num_rewards": len(artifacts.rewards),
         "last_average_reward": artifacts.average_rewards[-1] if artifacts.average_rewards else None,
         "last_average_cost": artifacts.average_costs[-1] if artifacts.average_costs else None,
@@ -1054,6 +1089,7 @@ def save_training_state(
         "edge_feature_mode": bundle.edge_feature_mode,
         "dijkstra_guidance": dijkstra_guidance_settings(bundle.config),
         "training_schedule": training_schedule_settings(bundle.config),
+        "validation_schedule": validation_schedule_settings(bundle.config),
         "scenario_schedule_seed": scenario_schedule_seed,
         "scenario_schedule": scenario_schedule,
         "artifacts": artifacts,
@@ -1846,10 +1882,7 @@ def maybe_run_validation_and_checkpoint(
     output_dir: Path,
     close_sumo_before_save_enabled: bool = False,
 ) -> dict[str, Any] | None:
-    validation_interval = max(1, bundle.config.schedule.num_episodes // 20)
-    if (episode + 1) % validation_interval != 0:
-        return None
-    if (episode + 1) < bundle.config.schedule.training_end:
+    if not training_validation_due(bundle.config, episode):
         return None
 
     try:
@@ -1914,6 +1947,7 @@ def maybe_run_validation_and_checkpoint(
     result.update(
         episode=int(episode),
         episode_number=int(episode + 1),
+        validation_schedule=validation_schedule_settings(bundle.config),
         variant=bundle.rp_variant,
         agent_type=bundle.agent_type,
         checkpoint=str(checkpoint_path),
@@ -2408,6 +2442,24 @@ def apply_training_schedule_args(
     )
 
 
+def apply_validation_schedule_args(
+    config: RuntimeConfig, args: argparse.Namespace,
+) -> RuntimeConfig:
+    start = getattr(args, "validation_start_episode", None)
+    interval = getattr(args, "validation_interval", None)
+    if start is None and interval is None:
+        return config
+    updated = replace(
+        config,
+        validation_start_episode=start if start is not None else config.validation_start_episode,
+        validation_interval=interval if interval is not None else config.validation_interval,
+    )
+    first, _ = resolve_training_validation_schedule(updated)
+    if first > config.schedule.num_episodes:
+        raise ValueError("The first validation episode exceeds --num-episodes.")
+    return updated
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train or validate route-planning ablation variants.")
     parser.add_argument("--env", choices=ENV_CHOICES, default="env",
@@ -2513,6 +2565,14 @@ def parse_args() -> argparse.Namespace:
         help="Episode where epsilon reaches its minimum 0.05 (default boundary remains 1200).",
     )
     parser.add_argument(
+        "--validation-start-episode", type=int, default=None,
+        help="First validation episode (one-based). Omit to preserve the original schedule.",
+    )
+    parser.add_argument(
+        "--validation-interval", type=int, default=None,
+        help="Episodes between validations; independent of epsilon decay. Omit for num_episodes // 20.",
+    )
+    parser.add_argument(
         "--max-episodes",
         type=int,
         default=None,
@@ -2603,6 +2663,7 @@ def main() -> None:
         )
     else:
         config = apply_training_schedule_args(config, args)
+    config = apply_validation_schedule_args(config, args)
     config = apply_bottleneck_args(config, args)
     config = apply_edqn_dijkstra_guidance_args(config, args)
     mode = build_execution_mode(read_tmp_file=False)
