@@ -1,5 +1,4 @@
-"""Pure shortest-path algorithms used by the routing experiments."""
-
+"""Shortest paths respecting SUMO edge connections and vehicle permissions."""
 from __future__ import annotations
 
 import heapq
@@ -9,92 +8,68 @@ def cost_by_length(edge_lengths, edge_id):
     return edge_lengths[edge_id]
 
 
-def dijkstra_next_hop(net, adj, cur_edge, goal_node, cost_fn):
-    """Return the next junction and first edge on the cheapest path."""
-    src = net.getEdge(cur_edge).getToNode().getID()
-    if src == goal_node:
-        return goal_node, None
-
-    dist = {src: 0.0}
-    prev_node = {}
-    prev_edge = {}
-    pq = [(0.0, src)]
-    while pq:
-        distance, node = heapq.heappop(pq)
-
-        if distance != dist[node]:
-            continue
-        if node == goal_node:
-            break
-        for next_node, edge_id in adj.get(node, []):
-            weight = cost_fn(edge_id)
-            next_distance = distance + weight
-
-            if next_node not in dist or next_distance < dist[next_node]:
-                dist[next_node] = next_distance
-                prev_node[next_node] = node
-                prev_edge[next_node] = edge_id
-                heapq.heappush(pq, (next_distance, next_node))
-
-    if goal_node not in prev_node:
+def dijkstra_next_hop(net, adj, cur_edge, goal_node, cost_fn, *, vclass="passenger"):
+    """Return the first legal edge and its exit junction on the cheapest path."""
+    nodes, edges, _ = dijkstra_path(
+        net, adj, cur_edge, goal_node, cost_fn, vclass=vclass,
+    )
+    if edges is None:
         return None, None
-
-    next_node = goal_node
-    while prev_node[next_node] != src:
-        next_node = prev_node[next_node]
-    first_edge = prev_edge[next_node]
-    return next_node, first_edge
+    if not edges:
+        return goal_node, None
+    return nodes[1], edges[0]
 
 
-def dijkstra_path(net, adj, cur_edge, goal_node, cost_fn):
+def dijkstra_path(net, adj, cur_edge, goal_node, cost_fn, *, vclass="passenger"):
+    """Return legal nodes, edges and cost after ``cur_edge`` (which is excluded).
+
+    Search states are incoming edges: two arrivals at the same junction can
+    permit different turns. Every transition, including the first one, must
+    have a SUMO connection allowing ``vclass``. ``adj`` still limits the graph
+    to the caller's edges; ``cost_fn`` retains its travel-time/length semantics.
+    Use ``vclass=None`` to ignore permissions while still checking connections.
+    An unreachable goal returns ``(None, None, None)``; a current edge already
+    exiting at the goal returns ``([goal], [], 0.0)``.
     """
-    Return the cheapest nodes, edges, and total cost from ``cur_edge``'s exit.
-
-    Unreachable goals return ``(None, None, None)``. If the current edge exits
-    directly at the goal, the result is ``([goal], [], 0.0)``.
-    """
-    src = net.getEdge(cur_edge).getToNode().getID()
+    start = net.getEdge(cur_edge)
+    src = start.getToNode().getID()
+    if vclass not in (None, "ignoring") and not start.allows(vclass):
+        return None, None, None
     if src == goal_node:
         return [src], [], 0.0
 
-    dist = {src: 0.0}
-    prev_node = {}
-    prev_edge = {}
-    pq = [(0.0, src)]
-
-    while pq:
-        distance, node = heapq.heappop(pq)
-        if distance != dist[node]:
+    dist = {cur_edge: 0.0}
+    previous = {}
+    weights = {}
+    queue = [(0.0, cur_edge)]
+    while queue:
+        distance, edge_id = heapq.heappop(queue)
+        if distance != dist[edge_id]:
             continue
+        edge = net.getEdge(edge_id)
+        node = edge.getToNode().getID()
         if node == goal_node:
-            break
+            path = []
+            cursor = edge_id
+            while cursor != cur_edge:
+                path.append(cursor)
+                cursor = previous[cursor]
+            path.reverse()
+            nodes = [src] + [net.getEdge(e).getToNode().getID() for e in path]
+            return nodes, path, distance
 
-        for next_node, edge_id in adj.get(node, []):
-            weight = cost_fn(edge_id)
-            next_distance = distance + weight
-            if next_node not in dist or next_distance < dist[next_node]:
-                dist[next_node] = next_distance
-                prev_node[next_node] = node
-                prev_edge[next_node] = edge_id
-                heapq.heappush(pq, (next_distance, next_node))
-
-    if goal_node not in prev_node:
-        return None, None, None
-
-    path_nodes = [goal_node]
-    path_edges = []
-    node = goal_node
-    while node != src:
-        previous = prev_node[node]
-        edge_id = prev_edge[node]
-        path_nodes.append(previous)
-        path_edges.append(edge_id)
-        node = previous
-
-    path_nodes.reverse()
-    path_edges.reverse()
-    total_cost = dist[goal_node]
-    return path_nodes, path_edges, total_cost
+        allowed = {e.getID() for e in edge.getAllowedOutgoing(vclass)}
+        for _, next_edge in adj.get(node, []):
+            if next_edge not in allowed:
+                continue
+            if next_edge not in weights:
+                weights[next_edge] = cost_fn(next_edge)
+            next_distance = distance + weights[next_edge]
+            if next_edge not in dist or next_distance < dist[next_edge]:
+                dist[next_edge] = next_distance
+                previous[next_edge] = edge_id
+                heapq.heappush(queue, (next_distance, next_edge))
+    return None, None, None
 
 
 __all__ = ["cost_by_length", "dijkstra_next_hop", "dijkstra_path"]
