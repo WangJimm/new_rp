@@ -131,6 +131,9 @@ class TrainingArtifacts:
     best_validation_reward: float = float("inf")
     best_better_ratio: float = float("-inf")
     best_better_ratio_cost: float = float("inf")
+    best_arrival_rate: float = float("-inf")
+    best_arrival_cost: float = float("inf")
+    best_arrival_episode: int | None = None
     bad_validation_count: int = 0
     validation_records: list[dict[str, Any]] = field(default_factory=list)
     warm_start_checkpoint: str | None = None
@@ -1431,6 +1434,9 @@ def save_training_rewards_json(artifacts: TrainingArtifacts, output_path: Path) 
         "best_validation_reward": artifacts.best_validation_reward,
         "best_better_ratio": artifacts.best_better_ratio,
         "best_better_ratio_cost": artifacts.best_better_ratio_cost,
+        "best_arrival_rate": artifacts.best_arrival_rate,
+        "best_arrival_cost": artifacts.best_arrival_cost,
+        "best_arrival_episode": artifacts.best_arrival_episode,
         "bad_validation_count": artifacts.bad_validation_count,
         "arrival_gate_required": 1.0,
         "validation_records": artifacts.validation_records,
@@ -1799,6 +1805,40 @@ def run_training_data_validation_phase(
     )
 
 
+def _validation_json_safe(value: Any) -> Any:
+    """Preserve complete evaluation data in portable, strict JSON."""
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, np.ndarray):
+        return _validation_json_safe(value.tolist())
+    if isinstance(value, np.generic):
+        return _validation_json_safe(value.item())
+    if isinstance(value, dict):
+        return {str(key): _validation_json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_validation_json_safe(item) for item in value]
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    return value
+
+
+def save_validation_result_atomic(result: dict[str, Any], output_path: Path) -> None:
+    """Write the full validation report only after its checkpoint is saved."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = output_path.with_name(f"{output_path.stem}.{os.getpid()}.tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as stream:
+            json.dump(_validation_json_safe(result), stream, ensure_ascii=False, indent=2, allow_nan=False)
+            fsync_file_object(stream)
+        safe_replace_file(tmp_path, output_path)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except PermissionError:
+            pass
+
+
 def maybe_run_validation_and_checkpoint(
     bundle: RefactorRuntimeBundle,
     artifacts: TrainingArtifacts,
@@ -1821,7 +1861,6 @@ def maybe_run_validation_and_checkpoint(
             reason=f"recovering after failed validation at episode={episode}",
         )
         return None
-    # better_ratio  total_time total_dijkstra_time
     print(
         f"better ratio {result['better_ratio']}, "
         f"agent raw {result['total_time']}, "
@@ -1830,11 +1869,14 @@ def maybe_run_validation_and_checkpoint(
         f"arrival {result['success_count']}/{result['ev_count']} "
         f"({result['success_rate']:.2%})"
     )
-    validation_time = result.get("selection_time", float("inf"))
-    better_ratio = result.get("better_ratio", float("-inf"))
+    artifacts = normalize_training_artifacts(artifacts)
+    validation_time = float(result.get("selection_time", float("inf")))
+    better_ratio = float(result.get("better_ratio", float("-inf")))
     success_count = int(result.get("success_count", 0))
     ev_count = int(result.get("ev_count", 0))
-    meets_arrival_gate = ev_count > 0 and success_count == ev_count
+    valid_arrival_counts = ev_count > 0 and 0 <= success_count <= ev_count
+    arrival_rate = success_count / ev_count if valid_arrival_counts else float("-inf")
+    meets_arrival_gate = valid_arrival_counts and success_count == ev_count
     should_save_best_validation = (
         meets_arrival_gate
         and np.isfinite(validation_time)
@@ -1851,54 +1893,105 @@ def maybe_run_validation_and_checkpoint(
             )
         )
     )
+    should_save_best_arrival = (
+        valid_arrival_counts
+        and np.isfinite(validation_time)
+        and (
+            arrival_rate > artifacts.best_arrival_rate
+            or (
+                arrival_rate == artifacts.best_arrival_rate
+                and validation_time < artifacts.best_arrival_cost
+            )
+        )
+    )
     checkpoint_prefix = bundle.agent_type or bundle.rp_variant
     lowest_cost_path = output_dir / f"{checkpoint_prefix}_best_100pct_arrival_lowest_cost.pt"
     better_ratio_path = output_dir / f"{checkpoint_prefix}_best_100pct_arrival_better_ratio.pt"
+    best_arrival_path = output_dir / f"{checkpoint_prefix}_best_arrival.pt"
+    best_arrival_result_path = best_arrival_path.with_suffix(".json")
+    checkpoint_path = output_dir / "validation" / f"episode_{episode + 1:06d}.pt"
+    result_path = checkpoint_path.with_suffix(".json")
+    result.update(
+        episode=int(episode),
+        episode_number=int(episode + 1),
+        variant=bundle.rp_variant,
+        agent_type=bundle.agent_type,
+        checkpoint=str(checkpoint_path),
+        validation_result_file=str(result_path),
+        arrival_gate_required=1.0,
+        arrival_gate_passed=meets_arrival_gate,
+        saved_lowest_cost_checkpoint=bool(should_save_best_validation),
+        saved_better_ratio_checkpoint=bool(should_save_best_better_ratio),
+        saved_best_arrival_checkpoint=bool(should_save_best_arrival),
+        lowest_cost_checkpoint=str(lowest_cost_path),
+        better_ratio_checkpoint=str(better_ratio_path),
+        best_arrival_checkpoint=str(best_arrival_path),
+        best_arrival_result_file=str(best_arrival_result_path),
+        best_arrival_selection_policy="highest arrival rate; ties use lowest total penalized cost",
+    )
     closed_for_save = close_sumo_before_save(
-        close_sumo_before_save_enabled and (should_save_best_validation or should_save_best_better_ratio),
+        close_sumo_before_save_enabled,
         reason=f"before saving validation checkpoints after episode={episode}",
     )
     try:
+        # Every completed validation keeps an independently loadable model,
+        # even if the strict 100% arrival gate rejects the best-model aliases.
+        save_agent_checkpoint_atomic(bundle.agent, episode, checkpoint_path)
         if should_save_best_validation:
             save_agent_checkpoint_atomic(bundle.agent, episode, lowest_cost_path)
-            artifacts.best_validation_reward = validation_time
         if should_save_best_better_ratio:
             save_agent_checkpoint_atomic(bundle.agent, episode, better_ratio_path)
-            artifacts.best_better_ratio = better_ratio
-            artifacts.best_better_ratio_cost = validation_time
+        if should_save_best_arrival:
+            save_agent_checkpoint_atomic(bundle.agent, episode, best_arrival_path)
+        save_validation_result_atomic(result, result_path)
+        if should_save_best_arrival:
+            best_result = dict(result)
+            best_result["source_checkpoint"] = str(checkpoint_path)
+            best_result["checkpoint"] = str(best_arrival_path)
+            best_result["validation_result_file"] = str(best_arrival_result_path)
+            save_validation_result_atomic(best_result, best_arrival_result_path)
     finally:
         restart_sumo_after_save(
             bundle.config,
             closed_for_save,
             reason=f"after saving validation checkpoints for episode={episode}",
         )
+    # Advance selection state only after all model/result writes succeed.
+    if should_save_best_validation:
+        artifacts.best_validation_reward = validation_time
+    if should_save_best_better_ratio:
+        artifacts.best_better_ratio = better_ratio
+        artifacts.best_better_ratio_cost = validation_time
+    if should_save_best_arrival:
+        artifacts.best_arrival_rate = arrival_rate
+        artifacts.best_arrival_cost = validation_time
+        artifacts.best_arrival_episode = int(episode)
     if not should_save_best_validation and not should_save_best_better_ratio:
         artifacts.bad_validation_count += 1
-    result["arrival_gate_required"] = 1.0
-    result["arrival_gate_passed"] = meets_arrival_gate
-    result["saved_lowest_cost_checkpoint"] = should_save_best_validation
-    result["saved_better_ratio_checkpoint"] = should_save_best_better_ratio
-    result["lowest_cost_checkpoint"] = str(lowest_cost_path)
-    result["better_ratio_checkpoint"] = str(better_ratio_path)
     artifacts.validation_records.append(
         {
             "episode": int(episode),
+            "episode_number": int(episode + 1),
             "success_count": success_count,
             "ev_count": ev_count,
             "success_rate": float(result.get("success_rate", 0.0)),
             "arrival_gate_passed": meets_arrival_gate,
-            "selection_time": float(validation_time),
-            "better_ratio": float(better_ratio),
-            "saved_lowest_cost_checkpoint": should_save_best_validation,
-            "saved_better_ratio_checkpoint": should_save_best_better_ratio,
+            "selection_time": validation_time,
+            "better_ratio": better_ratio,
+            "saved_lowest_cost_checkpoint": bool(should_save_best_validation),
+            "saved_better_ratio_checkpoint": bool(should_save_best_better_ratio),
+            "saved_best_arrival_checkpoint": bool(should_save_best_arrival),
             "lowest_cost_checkpoint": str(lowest_cost_path),
             "better_ratio_checkpoint": str(better_ratio_path),
+            "best_arrival_checkpoint": str(best_arrival_path),
+            "checkpoint": str(checkpoint_path),
+            "validation_result_file": str(result_path),
         }
     )
     if not meets_arrival_gate:
         print(
-            f"[checkpoint] skipped: validation arrival gate failed "
-            f"({success_count}/{ev_count}); 100% is required"
+            f"[checkpoint] 100%-arrival best models skipped "
+            f"({success_count}/{ev_count}); validation snapshot saved: {checkpoint_path}"
         )
     return result
 
