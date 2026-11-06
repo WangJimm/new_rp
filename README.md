@@ -118,3 +118,17 @@ Linux 可使用同一份程式與安裝器，執行路徑改為 `.venv/bin/pytho
 ```
 
 validation 不會因改用 Agg 而更動場景、goal、到達率門檻或評估公式。此修正已做繪圖回歸測試，完整 90 場景動態 validation 仍需由實際訓練／驗證執行確認。
+
+## Validation 合法轉向修正（2026-11-06）
+
+若 validation 出現 `EV_2` 的 `1147628417 -> 1451112465` 無連接錯誤，原因是舊 Dijkstra 只使用路口鄰接，忽略 edge 之間的合法轉向；這組起點與目標其實可達，需要繞行。現在改用 incoming edge 為搜尋狀態，逐段檢查 SUMO connection 與車種權限，也允許從另一條道路再次抵達同一路口。Dijkstra baseline 仍使用 TraCI 即時 edge travel time 作為權重，並依實際車輛 class 搜尋；共享的 Dijkstra 導引與距離查詢也使用相同合法轉向規則。
+
+不需重訓即可用現有模型，直接跑 90 個 validation 場景（含 Dijkstra 比較）：
+
+```powershell
+& '.\.venv\Scripts\python.exe' -m scripts.validation --env new_env --rp_variant proposed --checkpoint '.\outputs\new_env\proposed\tmp_file.pt' --output '.\outputs\new_env\proposed\turn_fixed_validation_result.json'
+```
+
+請啟動新的 Python process 才會載入修正。`tmp_file.pt` 是每 100 個訓練 episodes 保存的模型，可能早於最新 autosave；`training_state_latest.pt` 是完整續訓狀態，不可直接當成這個 `--checkpoint` 使用。此指令只做推論與比較，不執行訓練，也不更新最佳模型檔。
+
+已通過 22 項相關回歸測試（路徑搜尋、轉向限制、車種權限、baseline 與相容介面），另以獨立反向 BFS 檢查 600 場景的 12,700 筆 goal 指派全部可達，並驗證 1,876 組不同起點／目標的修正版路徑均符合合法 connection。完整 90 場景動態 validation 尚未執行；圖形連通不保證車輛不壅塞或不 teleport。資料、模型權重、需求、seed 和 split 未變更。

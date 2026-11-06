@@ -69,8 +69,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 6193,
-      "sha256": "190f5a2f5911bc7dc427e0d3c729cefc803770eb5fc7b0d3da7269a210dfec0a"
+      "bytes": 7891,
+      "sha256": "123a0ae44c2ead7cd2877770f45f11392ae4f33d3e5a6047c2fba4516f8bbca4"
     },
     {
       "path": "compare_training_rewards_to_dijkstra.py",
@@ -7749,8 +7749,8 @@
     },
     {
       "path": "rp/experiment/dijkstra_runner.py",
-      "bytes": 13519,
-      "sha256": "8b000dc505dfdea36c68f637fd98d9a885b111df1ae21da1b8da9e9cdc871723"
+      "bytes": 13910,
+      "sha256": "f2cbf04d4cd15e5f9c2e1045d09e7b5be179883a3e6f80abf4635ddb86f898ca"
     },
     {
       "path": "rp/experiment/episode_runner.py",
@@ -7819,8 +7819,8 @@
     },
     {
       "path": "rp/routing/algorithms.py",
-      "bytes": 2929,
-      "sha256": "a6122c8670a8209af07368c544ffac0452fa8879b7034b6e38569f7b15b5ee6e"
+      "bytes": 2845,
+      "sha256": "3be23cd67e05e520017a901bde6fce0dc1b00aaa89495e77e34c1b4acd74258e"
     },
     {
       "path": "rp/routing/geometry.py",
@@ -8059,8 +8059,8 @@
     },
     {
       "path": "tests/test_routing_algorithms.py",
-      "bytes": 6178,
-      "sha256": "7dd2b4a956181ed70c43f4c853f2ddab8c7e7c91f60b157665beb6961d7dc1d5"
+      "bytes": 6766,
+      "sha256": "144f2b19061070f5b382cde04e7bc3e0e3a611191c85169ff378167f4cc54f4d"
     },
     {
       "path": "tests/test_routing_package_api.py",
@@ -8096,6 +8096,11 @@
       "path": "tests/test_traffic_signals.py",
       "bytes": 8899,
       "sha256": "557bdbdb1c94e76ecf0a8db4dd143a07729c50d9485fdaea2696b842b5b8e555"
+    },
+    {
+      "path": "tests/test_turn_aware_routing.py",
+      "bytes": 5984,
+      "sha256": "017e9f92f1fa3d8ebe1c4f8a3731c4c86392ba32d0c9a944aee389e42a39ba4c"
     },
     {
       "path": "tests/test_vehicle_spawning_and_route_xml.py",
