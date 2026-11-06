@@ -255,6 +255,7 @@ class DijkstraBaselineRunner:
             cur_edge=current_edge,
             goal_node=goal_node_id,
             cost_fn=self.cost_fn,
+            vclass=self.traci.vehicle.getVehicleClass(ev_id),
         )
         if path_edges is None:
             state.out = True
@@ -262,13 +263,20 @@ class DijkstraBaselineRunner:
 
         state.routes = path_edges
         state.start_time = now
-        apply_full_route(
-            ev_id,
-            current_edge,
-            path_edges,
-            suffix_keep=None,
-            traci_api=self.traci,
-        )
+        try:
+            apply_full_route(
+                ev_id,
+                current_edge,
+                path_edges,
+                suffix_keep=None,
+                traci_api=self.traci,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Dijkstra baseline failed to apply route: "
+                f"ev_id={ev_id}, current_edge={current_edge}, "
+                f"goal_node={goal_node_id}, path_edges={path_edges}; {exc}"
+            ) from exc
         state.decided = True
 
     def _handle_arrivals(self, states: dict[str, DijkstraEVState], now: float) -> None:
