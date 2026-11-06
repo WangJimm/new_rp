@@ -163,9 +163,19 @@ outputs/new_env/proposed/
 此功能自動啟用，原訓練指令即可使用。3000 episodes 且維持 225／1200 探索邊界的範例：
 
 ```bat
-python -m scripts.run_experiment --env new_env --rp_variant proposed --num-episodes 3000 --epsilon-warmup-episodes 225 --epsilon-decay-end-episode 1200 --scenario-schedule-seed 42
+python -m scripts.run_experiment --env new_env --rp_variant proposed --num-episodes 3000 --epsilon-warmup-episodes 225 --epsilon-decay-end-episode 1200 --scenario-schedule-seed 42 --validation-start-episode 2000 --validation-interval 200
 ```
 
-validation 頻率、場景資料與評分公式沿用原設定。每次保存的是模型 checkpoint，不含完整 replay memory；完整續訓仍使用 `training_state_latest.pt`。以來源 proposed 模型約 4.7 MB 計算，3000 episodes 的 13 次 validation 歷史模型約增加 61 MB，另加 JSON 與最佳模型檔；實際大小依模型與結果而異。
+validation 頻率、場景資料與評分公式沿用原設定。每次保存的是模型 checkpoint，不含完整 replay memory；完整續訓仍使用 `training_state_latest.pt`。以來源 proposed 模型約 4.7 MB 計算，3000 episodes 使用 2000／200 排程的 6 次 validation 歷史模型約增加 28 MB，另加 JSON 與最佳模型檔；實際大小依模型與結果而異。
 
 已以 17 項測試驗證模型可載入、完整結果配對、排名優先順序、平手處理、100% 原規則、寫入異常及排名狀態保存。測試未執行訓練或啟動 SUMO。
+
+## 指定 validation 起點與間隔（2026-11-07）
+
+訓練可加上 `--validation-start-episode 2000 --validation-interval 200`：在第 2000、2200、2400、2600、2800、3000 個已完成 episode 執行 validation，共 6 次。第 2000 個包含在內；數字採從 1 起算。每次仍用相同 90 個 validation 場景與 Dijkstra 比較，並保存該次模型與完整結果，共 540 組場景比較。
+
+此設定與 epsilon 探索排程獨立，不會將原本 225／1200 的探索邊界延長。啟動資訊會列出 `validation_start_episode=2000, validation_interval=200`。validation JSON 與完整 autosave／完成標記也會記錄實際排程。
+
+未指定這兩個參數時，沿用舊排程：間隔為 `max(1, num_episodes // 20)`，從 epsilon decay 結束後第一個符合該全域間隔的 episode 開始。若只指定 start，會從該 episode 起按有效 interval 計算；start 不必是 interval 的整數倍。續訓時若要使用相同排程，請一樣帶入這兩個參數。
+
+start 與 interval 必須大於 0；指定後若首次 validation 超出總訓練長度，程式會在啟動 SUMO 前回報錯誤。29 項相關測試已通過，包含新的 6 次排程、舊排程、邊界、CLI 與既有模型保存規則；未執行訓練或 SUMO。
