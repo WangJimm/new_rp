@@ -48,7 +48,7 @@ class EDQNFineTuneCheckpointingTests(unittest.TestCase):
             )
         return returned, save_checkpoint
 
-    def test_checkpoint_is_rejected_below_full_arrival(self):
+    def test_strict_checkpoints_are_rejected_below_full_arrival(self):
         artifacts = run_experiment.create_training_artifacts()
         result = self.validation_result(
             success_count=99,
@@ -64,7 +64,10 @@ class EDQNFineTuneCheckpointingTests(unittest.TestCase):
                 Path(tmp),
             )
 
-        save_checkpoint.assert_not_called()
+        self.assertEqual(save_checkpoint.call_count, 2)
+        saved_paths = {Path(call.args[2]).name for call in save_checkpoint.call_args_list}
+        self.assertEqual(saved_paths, {"episode_000001.pt", "edqn_best_arrival.pt"})
+        self.assertTrue(returned["saved_best_arrival_checkpoint"])
         self.assertFalse(returned["arrival_gate_passed"])
         self.assertEqual(artifacts.best_validation_reward, float("inf"))
         self.assertEqual(artifacts.best_better_ratio, float("-inf"))
@@ -86,13 +89,15 @@ class EDQNFineTuneCheckpointingTests(unittest.TestCase):
                 output_dir,
             )
 
-        self.assertEqual(save_checkpoint.call_count, 2)
+        self.assertEqual(save_checkpoint.call_count, 4)
         saved_paths = {Path(call.args[2]).name for call in save_checkpoint.call_args_list}
         self.assertEqual(
             saved_paths,
             {
                 "edqn_best_100pct_arrival_lowest_cost.pt",
                 "edqn_best_100pct_arrival_better_ratio.pt",
+                "edqn_best_arrival.pt",
+                "episode_000001.pt",
             },
         )
         self.assertTrue(returned["arrival_gate_passed"])
@@ -119,8 +124,9 @@ class EDQNFineTuneCheckpointingTests(unittest.TestCase):
                 Path(tmp),
             )
 
-        save_checkpoint.assert_called_once()
-        self.assertTrue(str(save_checkpoint.call_args.args[2]).endswith("best_100pct_arrival_better_ratio.pt"))
+        strict_paths = [Path(call.args[2]).name for call in save_checkpoint.call_args_list
+                        if "100pct_arrival" in str(call.args[2])]
+        self.assertEqual(strict_paths, ["edqn_best_100pct_arrival_better_ratio.pt"])
         self.assertFalse(returned["saved_lowest_cost_checkpoint"])
         self.assertTrue(returned["saved_better_ratio_checkpoint"])
         self.assertEqual(artifacts.best_better_ratio_cost, 11.0)
