@@ -69,8 +69,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 7891,
-      "sha256": "123a0ae44c2ead7cd2877770f45f11392ae4f33d3e5a6047c2fba4516f8bbca4"
+      "bytes": 10400,
+      "sha256": "a2c2df5cc92c3096bdc098983199f541e533f919270463eb561fee3cdac99ce4"
     },
     {
       "path": "compare_training_rewards_to_dijkstra.py",
@@ -7934,8 +7934,8 @@
     },
     {
       "path": "scripts/run_experiment.py",
-      "bytes": 109130,
-      "sha256": "f724c2c3d6684712382c350a9f1cdfb6cd2ae77dea31af7637ba392890b627f3"
+      "bytes": 113519,
+      "sha256": "40ab28edf820723d81f3b072b681476accc20d249a2dc8ef43a70c441609cdd1"
     },
     {
       "path": "scripts/summarize_teleports.py",
@@ -8004,8 +8004,8 @@
     },
     {
       "path": "tests/test_edqn_finetune_checkpointing.py",
-      "bytes": 4923,
-      "sha256": "4b95938c9da80e3d6e7c79585c30da33954e0a05f918a03e5752c47f89f02147"
+      "bytes": 5349,
+      "sha256": "ac13e0e371bdbaf3ec51b1e2d236dd8531cdb67a3a0d33669b7b60dd6364fb3f"
     },
     {
       "path": "tests/test_experiment_package_api.py",
@@ -8101,6 +8101,11 @@
       "path": "tests/test_turn_aware_routing.py",
       "bytes": 5984,
       "sha256": "017e9f92f1fa3d8ebe1c4f8a3731c4c86392ba32d0c9a944aee389e42a39ba4c"
+    },
+    {
+      "path": "tests/test_validation_checkpoint_history.py",
+      "bytes": 10571,
+      "sha256": "a490f9dad6f0a8d30579e14523fd9b74d856546c702c16f44e21c0fb6ef5983f"
     },
     {
       "path": "tests/test_vehicle_spawning_and_route_xml.py",
