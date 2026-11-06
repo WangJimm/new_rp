@@ -213,6 +213,8 @@ class RuntimeConfig:
     sacd_target_entropy_ratio: float = 0.30
     sacd_use_epsilon_exploration: bool = False
     rp_variant: str = "proposed"
+    validation_start_episode: int | None = None
+    validation_interval: int | None = None
 
 
 def build_small_env_config(repo_root: Path, use_gnn = True, use_gui = False) -> RuntimeConfig:
