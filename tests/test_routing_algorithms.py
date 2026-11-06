@@ -80,6 +80,15 @@ class FakeEdge:
     def getToNode(self) -> FakeNode:
         return self.to_node
 
+    def getID(self):
+        return self.edge_id
+
+    def allows(self, vclass):
+        return True
+
+    def getAllowedOutgoing(self, vclass):
+        return self.outgoing
+
 
 class FakeNet:
     def __init__(self, current_to_node: str):
@@ -97,6 +106,15 @@ class DijkstraCharacterizationTests(unittest.TestCase):
             "B": [("C", "edge-bc"), ("D", "edge-bd")],
             "C": [("D", "edge-cd")],
         }
+        for source, outgoing in self.adj.items():
+            for target, edge_id in outgoing:
+                self.net.edges[edge_id] = FakeEdge(target)
+        for edge_id, edge in self.net.edges.items():
+            edge.edge_id = edge_id
+            edge.outgoing = {
+                self.net.edges[edge_id]: [object()]
+                for _, edge_id in self.adj.get(edge.getToNode().getID(), [])
+            }
         self.costs = {
             "edge-ab": 1.0,
             "edge-ac": 5.0,
