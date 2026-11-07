@@ -117,11 +117,11 @@ class PrioritizedReplayMemoryNumpy:
         self.memory = np.zeros(
             (capacity,),
             dtype=[
-                ("state", np.float32, state_shape),
-                ("action", np.int64, action_shape),
-                ("next_state", np.float32, state_shape),
-                ("reward", np.float32, 1),
-                ("done", np.float32, 1),
+                ("state", np.float32, self._subarray_shape(state_shape)),
+                ("action", np.int64, self._subarray_shape(action_shape)),
+                ("next_state", np.float32, self._subarray_shape(state_shape)),
+                ("reward", np.float32, (1,)),
+                ("done", np.float32, (1,)),
                 ("next_action_mask", np.bool_, (action_mask_shape,)),
                 ("data_t", object),
                 ("next_data_t", object),
@@ -132,6 +132,12 @@ class PrioritizedReplayMemoryNumpy:
         self.priorities = np.zeros((capacity,), dtype=np.float32)
         self.position = 0
         self.full = False
+
+    @staticmethod
+    def _subarray_shape(shape: int | tuple[int, ...]) -> tuple[int, ...]:
+        # NumPy's integer 1 dtype syntax has meant either scalar or length-one
+        # subarray across versions. Always request an explicit feature axis.
+        return (int(shape),) if isinstance(shape, (int, np.integer)) else tuple(shape)
 
     def push(self, *args: Any) -> None:
         self.memory[self.position] = Transition(*args)
@@ -158,13 +164,21 @@ class PrioritizedReplayMemoryNumpy:
         beta = min(1.0, self.beta_start + (1.0 - self.beta_start) * self.sample_count / self.beta_frames)
         weights = (max_index * probabilities[indices]) ** (-beta)
         weights = weights / weights.max()
+        def tensor_field(name: str) -> torch.Tensor:
+            values = np.stack(batch[name])
+            # Full training-state files may restore the old scalar-field dtype.
+            # Normalize at sampling time so they can resume without losing replay.
+            if values.ndim == 1:
+                values = values.reshape(batch_size, 1)
+            return torch.tensor(values)
+
         return (
-            torch.tensor(np.stack(batch["state"])),
-            torch.tensor(np.stack(batch["action"])),
-            torch.tensor(np.stack(batch["next_state"])),
-            torch.tensor(np.stack(batch["reward"])),
-            torch.tensor(np.stack(batch["done"])),
-            torch.tensor(np.stack(batch["next_action_mask"])),
+            tensor_field("state"),
+            tensor_field("action"),
+            tensor_field("next_state"),
+            tensor_field("reward"),
+            tensor_field("done"),
+            tensor_field("next_action_mask"),
             [item for item in batch["data_t"]],
             [item for item in batch["next_data_t"]],
             [item for item in batch["bag"]],
