@@ -179,3 +179,33 @@ validation 頻率、場景資料與評分公式沿用原設定。每次保存的
 未指定這兩個參數時，沿用舊排程：間隔為 `max(1, num_episodes // 20)`，從 epsilon decay 結束後第一個符合該全域間隔的 episode 開始。若只指定 start，會從該 episode 起按有效 interval 計算；start 不必是 interval 的整數倍。續訓時若要使用相同排程，請一樣帶入這兩個參數。
 
 start 與 interval 必須大於 0；指定後若首次 validation 超出總訓練長度，程式會在啟動 SUMO 前回報錯誤。29 項相關測試已通過，包含新的 6 次排程、舊排程、邊界、CLI 與既有模型保存規則；未執行訓練或 SUMO。
+
+
+## NumPy replay 維度相容修正與續訓（2026-11-07）
+
+若第 225 個 episode 首次出現 `learning..` 後，在 `gather(1, action_batch)`
+發生 `Index tensor must have the same number of dimensions as input tensor`，
+且啟動時有 NumPy `(type, 1)` dtype FutureWarning，請先更新程式。
+原寫法在部分 NumPy 版本把 action、reward、done 存成 scalar，抽樣得到 `[B]`，
+但模型需要 `[B, 1]`。新 buffer 改用明確 tuple 形狀，sample 也兼容已儲存的
+scalar dtype replay；reward／done 同步修正以避免錯誤廣播成 `[B, B]`。
+不需清空 replay 或改變 batch size，也不必為此降級 GPU 的 PyTorch。
+
+先確認完整存檔存在，再執行續訓。以下是 Windows Anaconda Prompt 指令，
+在已啟用的訓練環境及專案目錄執行：
+
+```bat
+git pull --ff-only
+dir outputs\new_env\proposed\training_state_latest.pt
+python -m scripts.run_experiment --env new_env --rp_variant proposed --num-episodes 3000 --epsilon-warmup-episodes 225 --epsilon-decay-end-episode 1200 --scenario-schedule-seed 42 --validation-start-episode 2000 --validation-interval 200 --resume-state outputs\new_env\proposed\training_state_latest.pt
+```
+
+完整 autosave 預設每 10 個已完成 episode 保存一次。若這次在第 225 個首次更新
+失敗且第 220 個存檔仍可讀，會保留模型、optimizer、replay、場景排程與紀錄，
+從第 221 個 episode 接續。實際進度以存檔內 `next_episode` 為準。
+不要刪除或以模型檔取代完整存檔；若檔案不存在或無法讀取，先檢查 `.bak` 備份，
+不要直接假設可續訓（原本的恢復流程可能在無可讀存檔時改為重新開始）。
+
+六項回歸測試涵蓋新 dtype、舊 scalar dtype 的 pickle 還原、batch size 1、
+多維 state，以及兩種 replay 各自完成 64 筆 batch 的 forward/backward/optimizer 更新，
+並檢查 TD target 為逐筆 `[64, 1]`。測試不啟動 SUMO 或執行正式訓練。

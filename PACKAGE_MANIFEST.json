@@ -34,8 +34,8 @@
     },
     {
       "path": "DQN/dqngnn_re.py",
-      "bytes": 21364,
-      "sha256": "4d277f6499757e581c98c13bb91a1d76ed3592b7049ad1c2b22a50e28959e25d"
+      "bytes": 22607,
+      "sha256": "fa5b10a06f348acfa9e313f9aa25ce490325002086a87ed3ab6e6aeb31ed244b"
     },
     {
       "path": "DQN/edqn.py",
@@ -69,8 +69,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 11768,
-      "sha256": "54b735604cb236df77ad3e569b31a7e8d1102353f6db4016d9c74686a5038025"
+      "bytes": 13959,
+      "sha256": "57fe57981dfdcc3c3de6af7778671e9a2932e0c15b47fbb7eb2809070ced36e8"
     },
     {
       "path": "compare_training_rewards_to_dijkstra.py",
@@ -8041,6 +8041,11 @@
       "path": "tests/test_new_env_support.py",
       "bytes": 5640,
       "sha256": "964261eb2aa5f51e849672cd7ab8df717f53519ac215aacb9977deb630689000"
+    },
+    {
+      "path": "tests/test_replay_shapes.py",
+      "bytes": 5577,
+      "sha256": "b6cbbdf6602446097a9bcb23e7a035c062912e8dbab6a63f96bfbb84d5eed419"
     },
     {
       "path": "tests/test_rl_baseline_correctness.py",
