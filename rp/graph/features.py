@@ -219,39 +219,36 @@ def collect_dynamic_edge_traveltime(
     debug=False,
     *,
     traci_api,
+    metric_indices=(0, 1, 2),
 ):
-    """Collect and smooth travel time, speed, and occupancy by edge."""
+    """Collect selected dynamic columns; unrequested columns stay zero.
+
+    The default retains the complete legacy collection API. Runtime feature
+    modes are fixed for an agent, so unused EMA histories need not be updated.
+    """
     current_time = traci_api.simulation.getTime()
+    requested = set(metric_indices)
+    collect_time, collect_speed, collect_occupancy = (i in requested for i in range(3))
     values = []
     for edge_id in edge_ids:
+        travel_time_value = mean_speed_value = occupancy_value = 0.0
         try:
-            travel_time_value = traci_api.edge.getTraveltime(edge_id)
-            travel_time_value = travel_time.update(
-                edge_id,
-                travel_time_value,
-                current_time,
-            )
-            raw_mean_speed = traci_api.edge.getLastStepMeanSpeed(edge_id)
-            mean_speed_value = mean_speed.update(
-                edge_id,
-                raw_mean_speed,
-                current_time,
-            )
-            occupancy_value = traci_api.edge.getLastStepOccupancy(edge_id)
-            occupancy_value = occupancy.update(
-                edge_id,
-                occupancy_value,
-                current_time,
-            )
+            if collect_time:
+                travel_time_value = travel_time.update(
+                    edge_id, traci_api.edge.getTraveltime(edge_id), current_time,
+                )
+            if collect_speed:
+                mean_speed_value = mean_speed.update(
+                    edge_id, traci_api.edge.getLastStepMeanSpeed(edge_id), current_time,
+                )
+            if collect_occupancy:
+                occupancy_value = occupancy.update(
+                    edge_id, traci_api.edge.getLastStepOccupancy(edge_id), current_time,
+                )
         except traci_api.TraCIException:
-            travel_time_value = np.nan
-            mean_speed_value = np.nan
-            occupancy_value = np.nan
-        values.append(
-            [travel_time_value, mean_speed_value, occupancy_value]
-        )
-    array = np.array(values, dtype=np.float32)
-    return torch.from_numpy(array)
+            travel_time_value = mean_speed_value = occupancy_value = np.nan
+        values.append([travel_time_value, mean_speed_value, occupancy_value])
+    return torch.from_numpy(np.asarray(values, dtype=np.float32).reshape(-1, 3))
 
 
 def _debug_incident_edges(
@@ -307,6 +304,18 @@ def build_data_runtime(
         occupancy,
         debug,
         traci_api=traci_api,
+        metric_indices=(0, 1, 2) if debug else {
+            "all": (0, 1, 2),
+            "dynamic_only": (0, 1, 2),
+            "static_only": (),
+            "none": (),
+            "travel_time_only": (0,),
+            "static_travel_time": (0,),
+            "avg_speed_only": (1,),
+            "occupancy_only": (2,),
+            "static_occupancy": (2,),
+            "static_travel_time_occupancy": (0, 2),
+        }[edge_feature_mode],
     )
     dynamic_values = torch.nan_to_num(
         dynamic_values,

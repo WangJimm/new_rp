@@ -252,16 +252,40 @@ def dist_to_lane_end(traci, ev_id: str) -> float:
     return max(0.0, lane_len - pos)
 
 
-def build_tls_state(traci, cur_edge: str, next_junctions: list[str], outgoing_edges: list[Any]) -> list[list[float]]:
+@dataclass(frozen=True)
+class MovementTopologyCache:
+    """Static controlled links captured after each scenario's traci.load."""
+
+    first_tls: dict[tuple[str, str], tuple[str, int]]
+    outgoing_lanes: dict[tuple[str, str], tuple[str, ...]]
+
+    @classmethod
+    def capture(cls, traci) -> MovementTopologyCache:
+        first_tls: dict[tuple[str, str], tuple[str, int]] = {}
+        lanes: dict[tuple[str, str], list[str]] = {}
+        for tls_id in traci.trafficlight.getIDList():
+            for link_idx, group in enumerate(traci.trafficlight.getControlledLinks(tls_id)):
+                for in_lane, out_lane, _via_lane in group:
+                    movement = (lane2edge(in_lane), lane2edge(out_lane))
+                    first_tls.setdefault(movement, (tls_id, link_idx))
+                    lanes.setdefault(movement, []).append(out_lane)
+        return cls(first_tls, {key: tuple(dict.fromkeys(value)) for key, value in lanes.items()})
+
+
+def build_tls_state(
+    traci, cur_edge: str, next_junctions: list[str], outgoing_edges: list[Any],
+    movement_topology: MovementTopologyCache | None = None,
+) -> list[list[float]]:
     edge_by_node = {edge.getToNode().getID(): edge for edge in outgoing_edges}
     ordered_edges = [edge_by_node[node_id] for node_id in next_junctions]
     tls_state: list[list[float]] = []
     for edge in ordered_edges:
-        tls, link_idx = find_tls_and_link_index_for_movement(
-            cur_edge,
-            edge.getID(),
-            traci_api=traci,
-        )
+        if movement_topology is None:
+            tls, link_idx = find_tls_and_link_index_for_movement(
+                cur_edge, edge.getID(), traci_api=traci,
+            )
+        else:
+            tls, link_idx = movement_topology.first_tls.get((cur_edge, edge.getID()), (None, None))
         time_to_green = 0.0
         remaining_green = 0.0
         if tls:
@@ -274,7 +298,12 @@ def build_tls_state(traci, cur_edge: str, next_junctions: list[str], outgoing_ed
     return tls_state
 
 
-def resolve_movement_out_lanes(traci, cur_edge: str, out_edge_id: str) -> list[str]:
+def resolve_movement_out_lanes(
+    traci, cur_edge: str, out_edge_id: str,
+    movement_topology: MovementTopologyCache | None = None,
+) -> list[str]:
+    if movement_topology is not None:
+        return list(movement_topology.outgoing_lanes.get((cur_edge, out_edge_id), ()))
     lane_ids: list[str] = []
     for tls in traci.trafficlight.getIDList():
         links = traci.trafficlight.getControlledLinks(tls)
@@ -288,9 +317,12 @@ def resolve_movement_out_lanes(traci, cur_edge: str, out_edge_id: str) -> list[s
     return list(dict.fromkeys(lane_ids))
 
 
-def candidate_lane_metrics(traci, cur_edge: str, edge: Any) -> dict[str, float | list[str]]:
+def candidate_lane_metrics(
+    traci, cur_edge: str, edge: Any,
+    movement_topology: MovementTopologyCache | None = None,
+) -> dict[str, float | list[str]]:
     out_edge_id = edge.getID()
-    lane_ids = resolve_movement_out_lanes(traci, cur_edge, out_edge_id)
+    lane_ids = resolve_movement_out_lanes(traci, cur_edge, out_edge_id, movement_topology)
     if not lane_ids:
         lane_ids = [lane.getID() for lane in edge.getLanes()]
 
@@ -380,10 +412,11 @@ def build_candidate_action_features(
     next_junctions: list[str],
     outgoing_edges: list[Any],
     neighbors: list[int],
+    movement_topology: MovementTopologyCache | None = None,
 ) -> torch.Tensor:
     edge_by_node = {edge.getToNode().getID(): edge for edge in outgoing_edges}
     ordered_edges = [edge_by_node[node_id] for node_id in next_junctions]
-    tls_rows = build_tls_state(traci, cur_edge, next_junctions, outgoing_edges)
+    tls_rows = build_tls_state(traci, cur_edge, next_junctions, outgoing_edges, movement_topology)
     edge2idx = static_pack.get("eid2eidx") or static_pack.get("edge2idx") or {}
     previous_node = state.recent_nodes[-2] if len(state.recent_nodes) >= 2 else None
     rows: list[torch.Tensor] = []
@@ -401,7 +434,7 @@ def build_candidate_action_features(
         visited_flag = float(state.ever_visit[neighbor_idx].item())
         visit_age = float(state.visit_age[neighbor_idx].item())
         tls_tensor = torch.tensor(tls_rows[idx], dtype=torch.float32)
-        lane_metrics = candidate_lane_metrics(traci, cur_edge, edge)
+        lane_metrics = candidate_lane_metrics(traci, cur_edge, edge, movement_topology)
         extra = torch.tensor(
             [
                 is_uturn,
@@ -433,6 +466,7 @@ def build_agent_snapshot(
     goal_node_id: str,
     cur_edge_override: str | None = None,
     debug: bool = False,
+    movement_topology: MovementTopologyCache | None = None,
 ) -> AgentDecisionSnapshot:
     nid2idx = static_pack["nid2idx"]
     cur_edge = cur_edge_override or traci.vehicle.getRoadID(ev_id)
@@ -465,7 +499,7 @@ def build_agent_snapshot(
     else:
         state_tensor = agent.concat_state_tls(
             state_tensor,
-            build_tls_state(traci, cur_edge, next_junctions, outgoing_edges),
+            build_tls_state(traci, cur_edge, next_junctions, outgoing_edges, movement_topology),
         )
 
     graph_data = build_data_runtime(
@@ -494,6 +528,7 @@ def build_agent_snapshot(
         next_junctions=next_junctions,
         outgoing_edges=outgoing_edges,
         neighbors=neighbors,
+        movement_topology=movement_topology,
     )
     graph_data.action_features = candidate_action_features
     if hasattr(agent, "concat_state_action_features"):
@@ -770,8 +805,11 @@ class DQNGNNEpisodeRunner:
         self.nid2idx = static_pack["nid2idx"]
         self._reward_penalty_dead_end = float(self.config.dead_end_penalty)
         self.last_run_stats: dict[str, Any] = {}
+        self.movement_topology: MovementTopologyCache | None = None
 
     def run(self, run_input: EpisodeRunInput) -> list[float]:
+        # Rebuild for every loaded scenario, even when a runner is reused.
+        self.movement_topology = MovementTopologyCache.capture(self.traci)
         runtime = EpisodeRuntime.create(run_input.ev_ids, n_nodes=len(self.nid2idx))
         for ev_id, state in runtime.states.items():
             state.trajectory_id = f"{run_input.rollout_id}:{ev_id}"
@@ -1125,6 +1163,7 @@ class DQNGNNEpisodeRunner:
             goal_node_id=goal_node_id,
             cur_edge_override=None,
             debug=run_input.debug,
+            movement_topology=self.movement_topology,
         )
         if not snapshot.neighbors:
             runtime.total_steps += self._terminate_failure(
@@ -1214,6 +1253,7 @@ class DQNGNNEpisodeRunner:
             goal_node_id=goal_node_id,
             cur_edge_override=state.current_exit_edge,
             debug=run_input.debug,
+            movement_topology=self.movement_topology,
         )
         if not snapshot.neighbors:
             self._handle_dead_end(ev_id, state, runtime, run_input, snapshot, goal_node_id, now)
