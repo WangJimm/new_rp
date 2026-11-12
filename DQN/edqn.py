@@ -47,6 +47,11 @@ class EDQNShapeConfig:
         return self.num_nodes * 2 + self.current_time_dim
 
 
+def _subarray_shape(shape: int | tuple[int, ...]) -> tuple[int, ...]:
+    """Keep a feature axis for size-one fields on every NumPy version."""
+    return (int(shape),) if isinstance(shape, (int, np.integer)) else tuple(shape)
+
+
 class UniformReplayMemoryNumpy:
     """Uniform replay buffer with the same sample interface used by the runner.
 
@@ -67,11 +72,11 @@ class UniformReplayMemoryNumpy:
         self.memory = np.zeros(
             (capacity,),
             dtype=[
-                ("state", np.float32, state_shape),
-                ("action", np.int64, action_shape),
-                ("next_state", np.float32, state_shape),
-                ("reward", np.float32, 1),
-                ("done", np.float32, 1),
+                ("state", np.float32, _subarray_shape(state_shape)),
+                ("action", np.int64, _subarray_shape(action_shape)),
+                ("next_state", np.float32, _subarray_shape(state_shape)),
+                ("reward", np.float32, (1,)),
+                ("done", np.float32, (1,)),
                 ("next_action_mask", np.bool_, (action_mask_shape,)),
                 ("data_t", object),
                 ("next_data_t", object),
@@ -112,13 +117,22 @@ class UniformReplayMemoryNumpy:
         indices = np.random.choice(max_index, batch_size, replace=False)
         batch = self.memory[indices]
         weights = torch.ones(batch_size, 1, dtype=torch.float32)
+
+        def tensor_field(name: str) -> torch.Tensor:
+            values = np.stack(batch[name])
+            # Old pickled buffers may contain scalar dtype fields. Normalize
+            # their samples without discarding stored experience or metadata.
+            if values.ndim == 1:
+                values = values.reshape(batch_size, 1)
+            return torch.tensor(values)
+
         return (
-            torch.tensor(np.stack(batch["state"])),
-            torch.tensor(np.stack(batch["action"])),
-            torch.tensor(np.stack(batch["next_state"])),
-            torch.tensor(np.stack(batch["reward"])),
-            torch.tensor(np.stack(batch["done"])),
-            torch.tensor(np.stack(batch["next_action_mask"])),
+            tensor_field("state"),
+            tensor_field("action"),
+            tensor_field("next_state"),
+            tensor_field("reward"),
+            tensor_field("done"),
+            tensor_field("next_action_mask"),
             [item for item in batch["data_t"]],
             [item for item in batch["next_data_t"]],
             [item for item in batch["bag"]],
