@@ -207,6 +207,9 @@ class EDQNAgentRefactored:
     Q-network structure, and Huber loss. It intentionally remains non-GNN.
     """
 
+    # The shared runner can omit graph-only observations and replay payloads.
+    requires_graph_data = False
+
     def __init__(
         self,
         shape: EDQNShapeConfig,

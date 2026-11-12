@@ -502,6 +502,23 @@ def build_agent_snapshot(
             build_tls_state(traci, cur_edge, next_junctions, outgoing_edges, movement_topology),
         )
 
+    if not getattr(agent, "requires_graph_data", True):
+        # Recent-node history also drives U-turn/revisit rewards. Keep exactly
+        # one update per decision even though graph-only features are omitted.
+        state.recent_nodes.append(source)
+        return AgentDecisionSnapshot(
+            current_edge=cur_edge,
+            current_node=current_node,
+            neighbors=neighbors,
+            next_junctions=next_junctions,
+            outgoing_edges=outgoing_edges,
+            state_tensor=state_tensor,
+            action_mask=action_mask,
+            graph_data=None,
+            # Terminal state construction still needs the source/goal indices.
+            bag=(source, target, neighbors, torch.empty((len(neighbors), 0))),
+        )
+
     graph_data = build_data_runtime(
         static_pack,
         travel_time_ema,
