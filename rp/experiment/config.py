@@ -4,7 +4,7 @@ import os
 import sys
 import sysconfig
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Sequence
 
@@ -306,12 +306,12 @@ def build_env_config(repo_root: Path, use_gnn = True, use_gui = False) -> Runtim
     )
 
 def build_static_env_config(repo_root: Path, use_gnn = True, use_gui = False) -> RuntimeConfig:
-    route_root = PROJECT_DIR
+    route_root = Path(repo_root)
     sumo_home = resolve_sumo_home()
     run_dir = route_root / "env" # 要使用哪種環境，指定到env
 
 
-    return RuntimeConfig(
+    config = RuntimeConfig(
         repo_root=repo_root,
         paths=SumoPaths(
             sumo_home=sumo_home,
@@ -357,6 +357,25 @@ def build_static_env_config(repo_root: Path, use_gnn = True, use_gui = False) ->
         use_gnn=use_gnn,
     )
 
+    # New partitions can be deployed without hardcoding sparse generator seeds.
+    # Keep the legacy ranges available when no manifest has been installed.
+    manifest = run_dir / "scenario_manifest.csv"
+    if manifest.is_file():
+        catalog = load_scenario_catalog(manifest)
+        flows = {
+            split: tuple(sorted({r.flow_name for r in catalog if r.split == split}, key=int))
+            for split in ("training", "validation", "testing")
+        }
+        config = replace(config, environment=replace(
+            config.environment,
+            general_vehicle_flows=tuple(sorted({r.flow_name for r in catalog}, key=int)),
+            training_vehicle_flows=flows["training"],
+            validation_vehicle_flows=flows["validation"],
+            testing_vehicle_flows=flows["testing"],
+            scenario_catalog=catalog,
+            scenario_manifest=manifest,
+        ))
+    return config
 
 
 def build_new_env_config(repo_root: Path, use_gnn=True, use_gui=False) -> RuntimeConfig:
@@ -395,14 +414,14 @@ def build_selected_env_config(repo_root: Path, env_name="env", use_gnn=True, use
 
 
 def validate_environment_inputs(config: RuntimeConfig) -> None:
-    """Check the new environment before starting a SUMO process."""
-    if config.environment.name != "new_env":
+    """Check manifest-backed environments before starting a SUMO process."""
+    if config.environment.name != "new_env" and not config.environment.scenario_catalog:
         return
     import xml.etree.ElementTree as ET
     from .scenario_loader import build_training_scenario, build_validation_scenario, build_testing_scenario
     for path in (config.paths.net_file, config.paths.config_file):
         if not path.is_file():
-            raise FileNotFoundError(f"Missing new_env input: {path}")
+            raise FileNotFoundError(f"Missing {config.environment.name} input: {path}")
     net_root = ET.parse(config.paths.net_file).getroot()
     nodes = {node.get("id") for node in net_root.findall("junction")}
     missing = set(config.environment.cs_locations) - nodes
