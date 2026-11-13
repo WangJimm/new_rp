@@ -49,6 +49,11 @@ class SACDShapeConfig:
         return self.num_nodes * 2 + self.current_time_dim + self.action_feature_state_dim
 
 
+def _subarray_shape(shape: int | tuple[int, ...]) -> tuple[int, ...]:
+    """Retain feature axes for size-one fields across NumPy versions."""
+    return (int(shape),) if isinstance(shape, (int, np.integer)) else tuple(shape)
+
+
 class SACDPrioritizedReplayMemoryNumpy:
     """Prioritized replay buffer for masked discrete SAC.
 
@@ -79,11 +84,11 @@ class SACDPrioritizedReplayMemoryNumpy:
         self.memory = np.zeros(
             (capacity,),
             dtype=[
-                ("state", np.float32, state_shape),
-                ("action", np.int64, action_shape),
-                ("next_state", np.float32, state_shape),
-                ("reward", np.float32, 1),
-                ("done", np.float32, 1),
+                ("state", np.float32, _subarray_shape(state_shape)),
+                ("action", np.int64, _subarray_shape(action_shape)),
+                ("next_state", np.float32, _subarray_shape(state_shape)),
+                ("reward", np.float32, (1,)),
+                ("done", np.float32, (1,)),
                 ("action_mask", np.bool_, (action_mask_shape,)),
                 ("next_action_mask", np.bool_, (action_mask_shape,)),
                 ("data_t", object),
@@ -161,14 +166,22 @@ class SACDPrioritizedReplayMemoryNumpy:
         beta = min(1.0, self.beta_start + (1.0 - self.beta_start) * self.sample_count / max(self.beta_frames, 1))
         weights = (max_index * probabilities[indices]) ** (-beta)
         weights = weights / max(float(weights.max()), 1e-8)
+
+        def tensor_field(name: str) -> torch.Tensor:
+            values = np.stack(batch[name])
+            # Normalize legacy checkpoints containing scalar replay fields.
+            if values.ndim == 1:
+                values = values.reshape(batch_size, 1)
+            return torch.tensor(values)
+
         return (
-            torch.tensor(np.stack(batch["state"])),
-            torch.tensor(np.stack(batch["action"])),
-            torch.tensor(np.stack(batch["next_state"])),
-            torch.tensor(np.stack(batch["reward"])),
-            torch.tensor(np.stack(batch["done"])),
-            torch.tensor(np.stack(batch["action_mask"])),
-            torch.tensor(np.stack(batch["next_action_mask"])),
+            tensor_field("state"),
+            tensor_field("action"),
+            tensor_field("next_state"),
+            tensor_field("reward"),
+            tensor_field("done"),
+            tensor_field("action_mask"),
+            tensor_field("next_action_mask"),
             indices,
             torch.tensor(weights, dtype=torch.float32).unsqueeze(1),
         )
@@ -281,7 +294,7 @@ class SACDAgentRefactored:
     State: current-node one-hot + target-node one-hot + normalized SUMO time
     + padded outgoing-action traffic features.
     Action: masked outgoing-neighbor index.
-    Reward: SACD-specific route reward emitted by the shared episode runner.
+    Reward: common route reward emitted by the shared episode runner.
     """
 
     def __init__(
@@ -339,6 +352,11 @@ class SACDAgentRefactored:
         self.show = True
         self.eval_net = _NoopTrainEval()
         self.target_net = self.eval_net
+
+    @property
+    def requires_graph_data(self) -> bool:
+        # Optional traffic-action features still need the full graph path.
+        return self.shape.action_feature_dim > 0
 
     @property
     def alpha(self) -> torch.Tensor:

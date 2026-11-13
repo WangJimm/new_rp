@@ -63,6 +63,8 @@ class MaskedActorCritic(nn.Module):
 class TorchPPOAgentRefactored:
     """Masked discrete PPO implemented with only PyTorch and NumPy."""
 
+    requires_graph_data = False
+
     def __init__(
         self,
         shape: TorchPPOShapeConfig,
@@ -204,6 +206,7 @@ class TorchPPOAgentRefactored:
                 old_logits = rollout["old_logits"][indices]
                 minibatch_advantages = rollout["advantages"][indices]
                 returns = rollout["returns"][indices]
+                old_values = rollout["old_values"][indices]
 
                 logits, values = self.network(states, masks)
                 distribution = Categorical(logits=logits)
@@ -220,11 +223,14 @@ class TorchPPOAgentRefactored:
                 ) * minibatch_advantages
                 policy_loss = -torch.min(surrogate1, surrogate2).mean()
 
-                value_error_squared = (values - returns).pow(2)
-                value_loss = torch.clamp(
-                    value_error_squared,
-                    min=0.0,
-                    max=self.vf_clip_param,
+                # Clip the prediction change, not the squared error: capping
+                # MSE makes the critic gradient zero on large route failures.
+                clipped_values = old_values + (values - old_values).clamp(
+                    -self.vf_clip_param, self.vf_clip_param,
+                )
+                value_loss = 0.5 * torch.maximum(
+                    (values - returns).pow(2),
+                    (clipped_values - returns).pow(2),
                 ).mean()
 
                 entropy = distribution.entropy().mean()

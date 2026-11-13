@@ -45,6 +45,8 @@ class RLLibPPOAgentRefactored:
 
     MODEL_NAME = "rp_masked_ppo_torch_model"
 
+    requires_graph_data = False
+
     def __init__(
         self,
         shape: RLLibPPOShapeConfig,

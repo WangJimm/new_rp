@@ -2442,6 +2442,23 @@ def apply_training_schedule_args(
     )
 
 
+def apply_episode_limit_args(
+    config: RuntimeConfig, args: argparse.Namespace,
+) -> RuntimeConfig:
+    """Override common budgets without editing per-machine configuration."""
+    overrides = {}
+    for field, flag in (
+        ("max_decisions_per_ev", "--max-decisions-per-ev"),
+        ("max_simulation_steps", "--max-simulation-steps"),
+    ):
+        value = getattr(args, field, None)
+        if value is not None:
+            if value <= 0:
+                raise ValueError(f"{flag} must be positive.")
+            overrides[field] = int(value)
+    return replace(config, **overrides) if overrides else config
+
+
 def apply_validation_schedule_args(
     config: RuntimeConfig, args: argparse.Namespace,
 ) -> RuntimeConfig:
@@ -2462,6 +2479,14 @@ def apply_validation_schedule_args(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train or validate route-planning ablation variants.")
+    parser.add_argument(
+        "--max-decisions-per-ev", type=int, default=None,
+        help="Override the per-EV decision budget for this run and periodic validation.",
+    )
+    parser.add_argument(
+        "--max-simulation-steps", type=int, default=None,
+        help="Override the per-scenario simulation-step budget.",
+    )
     parser.add_argument("--env", choices=ENV_CHOICES, default="env",
                         help="Dataset environment: env (original) or new_env (Berlin manifest split).")
     parser.add_argument(
@@ -2663,6 +2688,7 @@ def main() -> None:
         )
     else:
         config = apply_training_schedule_args(config, args)
+    config = apply_episode_limit_args(config, args)
     config = apply_validation_schedule_args(config, args)
     config = apply_bottleneck_args(config, args)
     config = apply_edqn_dijkstra_guidance_args(config, args)
