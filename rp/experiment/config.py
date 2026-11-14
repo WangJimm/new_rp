@@ -79,6 +79,10 @@ RP_VARIANT_SPECS: dict[str, RPVariantSpec] = {
         edge_feature_mode=None,
         description="Non-GNN PPO baseline implemented with pure PyTorch; masked outgoing-neighbor policy with current/target/time state.",
     ),
+    "ppo_route_features": RPVariantSpec(
+        name="ppo_route_features", agent_type="ppo_route", edge_feature_mode=None,
+        description="PPO with incoming-edge/history/local candidate features, shared scorer and immediate dead-end filtering.",
+    ),
     "sacd_baseline": RPVariantSpec(
         name="sacd_baseline",
         agent_type="sacd",
@@ -212,6 +216,8 @@ class RuntimeConfig:
     sacd_replay_alpha: float = 0.0
     sacd_target_entropy_ratio: float = 0.30
     sacd_use_epsilon_exploration: bool = False
+    training_seed: int | None = None
+    deterministic: bool = False
     rp_variant: str = "proposed"
     validation_start_episode: int | None = None
     validation_interval: int | None = None

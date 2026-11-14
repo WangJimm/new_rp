@@ -92,6 +92,11 @@ from DQN.dqn_re import DQNAgentRefactored, DQNShapeConfig
 from DQN.edqn import EDQNAgentRefactored, EDQNShapeConfig
 from DQN.ppo_rllib import RLLibPPOAgentRefactored, RLLibPPOShapeConfig
 from DQN.ppo_torch import TorchPPOAgentRefactored, TorchPPOShapeConfig
+from DQN.ppo_route import RoutePPOAgent, RoutePPOShapeConfig
+from rp.experiment.reproducibility import (
+    add_reproducibility_args, apply_reproducibility_args, seed_everything,
+    capture_rng_state, restore_rng_state, write_run_manifest,
+)
 from DQN.sacd import SACDAgentRefactored, SACDShapeConfig
 from tqdm import tqdm
 
@@ -467,6 +472,11 @@ def load_runtime_bundle(config: RuntimeConfig, logger: EpisodeLogger | None = No
         agent = build_refactored_ppo_rllib_agent_from_static_pack(static_pack)
     elif agent_type == "ppo_torch":
         agent = build_refactored_ppo_torch_agent_from_static_pack(static_pack)
+    elif agent_type == "ppo_route":
+        shape = RoutePPOShapeConfig(len(static_pack["nid2idx"]), len(static_pack["edge_ids"]),
+                                    max(len(v) for v in static_pack["adj"].values()))
+        agent = RoutePPOAgent(shape)
+        agent.configure_route_context(net, static_pack, config.max_decisions_per_ev)
     elif agent_type == "sacd":
         agent = build_refactored_sacd_agent_from_static_pack(
             static_pack,
@@ -1095,6 +1105,11 @@ def save_training_state(
         "artifacts": artifacts,
         "progress": progress,
         "agent_state": _agent_training_state(bundle.agent),
+        "rng_state": capture_rng_state(),
+        "reproducibility": {"training_seed": bundle.config.training_seed,
+                            "deterministic": bundle.config.deterministic,
+                            "max_decisions_per_ev": bundle.config.max_decisions_per_ev,
+                            "max_simulation_steps": bundle.config.max_simulation_steps},
         "saved_at": time.strftime("%Y%m%d-%H%M%S"),
     }
     log_save_stage("training_state payload build done", episode=next_episode - 1, path=output_path)
@@ -1206,7 +1221,15 @@ def load_training_state(bundle: RefactorRuntimeBundle, state_path: Path) -> dict
             "Resume state training schedule does not match the current command. "
             "Use the same total episodes and epsilon-boundary flags as the original run."
         )
+    if "reproducibility" in payload:
+        for key, saved in payload["reproducibility"].items():
+            if getattr(bundle.config, key) != saved:
+                raise ValueError(f"Resume reproducibility setting mismatch: {key}")
     _load_agent_training_state(bundle.agent, payload["agent_state"])
+    if "rng_state" in payload:
+        restore_rng_state(payload["rng_state"])
+    elif bundle.config.training_seed is not None:
+        print("[warn] legacy state has no RNG snapshot; exact resumed randomness is unavailable")
     return payload
 
 
@@ -1221,7 +1244,7 @@ def run_training_episode(
     progress.last_episode = episode
     epsilon = (
         0.0
-        if bundle.agent_type in {"ppo_rllib", "ppo_torch"}
+        if bundle.agent_type in {"ppo_rllib", "ppo_torch", "ppo_route"}
         else epsilon_scheduler.value(episode)
     )
     bundle.agent.EPSILON = epsilon
@@ -1270,7 +1293,7 @@ def run_training_episode(
     # PPO has no replay-buffer warmup: collect on-policy rollouts immediately
     # and update as soon as its rollout batch reaches train_batch_size.
     train_enabled = (
-        bundle.agent_type in {"ppo_rllib", "ppo_torch"}
+        bundle.agent_type in {"ppo_rllib", "ppo_torch", "ppo_route"}
         or (episode + 1) >= bundle.config.schedule.warmup_end
     )
     runner_input = build_runner_input(
@@ -1564,6 +1587,7 @@ def maybe_save_training_outputs(
 
 
 def run_with_agent_eval_mode(bundle: RefactorRuntimeBundle, fn) -> Any:
+    rng_state = capture_rng_state() if bundle.config.training_seed is not None else None
     if hasattr(bundle.agent, "encoder"):
         bundle.agent.encoder.eval()
     bundle.agent.eval_net.eval()
@@ -1574,6 +1598,8 @@ def run_with_agent_eval_mode(bundle: RefactorRuntimeBundle, fn) -> Any:
         if hasattr(bundle.agent, "encoder"):
             bundle.agent.encoder.train()
         bundle.agent.eval_net.train()
+        if rng_state is not None:
+            restore_rng_state(rng_state)
 
 def run_validation_for_scenario_pairs(
     bundle: RefactorRuntimeBundle,
@@ -2641,6 +2667,7 @@ def parse_args() -> argparse.Namespace:
         help="Use sumo-gui instead of sumo.",
     )
     add_bottleneck_args(parser)
+    add_reproducibility_args(parser)
     return parser.parse_args()
 
 
@@ -2689,6 +2716,8 @@ def main() -> None:
     else:
         config = apply_training_schedule_args(config, args)
     config = apply_episode_limit_args(config, args)
+    config = apply_reproducibility_args(config, args)
+    seed_everything(config.training_seed, deterministic=config.deterministic)
     config = apply_validation_schedule_args(config, args)
     config = apply_bottleneck_args(config, args)
     config = apply_edqn_dijkstra_guidance_args(config, args)
@@ -2764,6 +2793,7 @@ def main() -> None:
 
 
         bundle = load_runtime_bundle(config, logger=None)
+        write_run_manifest(bundle, args, output_dir, session_info)
         print(f"agent type: {type(bundle.agent).__name__}")
         # print(f"training artifact keys: {list(vars(artifacts).keys())}")
 

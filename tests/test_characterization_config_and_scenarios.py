@@ -95,6 +95,7 @@ class ConfigCharacterizationTests(unittest.TestCase):
             "edqn_baseline": ("edqn", None),
             "ppo_baseline": ("ppo_rllib", None),
             "ppo_torch_baseline": ("ppo_torch", None),
+            "ppo_route_features": ("ppo_route", None),
             "sacd_baseline": ("sacd", None),
             "gine_no_edge_features": ("gine_action", "none"),
             "gine_fixed_action_head": ("gine", "static_occupancy"),

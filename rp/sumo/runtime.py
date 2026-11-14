@@ -20,6 +20,8 @@ def build_load_args(config: RuntimeConfig, scenario: ScenarioSpec) -> list[str]:
         "true",
     ]
     seed = getattr(scenario, "sumo_seed", None)
+    if seed is None:
+        seed = getattr(config, "training_seed", None)
     if seed is not None:
         args.extend(["--seed", str(seed)])
     return args

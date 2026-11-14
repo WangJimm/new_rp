@@ -506,6 +506,15 @@ def build_agent_snapshot(
         # Recent-node history also drives U-turn/revisit rewards. Keep exactly
         # one update per decision even though graph-only features are omitted.
         state.recent_nodes.append(source)
+        action_features = torch.empty((len(neighbors), 0))
+        if getattr(agent, "uses_route_features", False):
+            state_tensor, next_junctions, outgoing_edges, action_features = agent.prepare_route_snapshot(
+                base_state=state_tensor, traci=traci, cur_edge=cur_edge,
+                goal_node_id=goal_node_id, state=state,
+                next_junctions=next_junctions, outgoing_edges=outgoing_edges)
+            neighbors = [nid2idx[node_id] for node_id in next_junctions]
+            action_mask = torch.zeros_like(action_mask)
+            action_mask[neighbors] = 1
         return AgentDecisionSnapshot(
             current_edge=cur_edge,
             current_node=current_node,
@@ -516,7 +525,7 @@ def build_agent_snapshot(
             action_mask=action_mask,
             graph_data=None,
             # Terminal state construction still needs the source/goal indices.
-            bag=(source, target, neighbors, torch.empty((len(neighbors), 0))),
+            bag=(source, target, neighbors, action_features),
         )
 
     graph_data = build_data_runtime(
@@ -1119,7 +1128,14 @@ class DQNGNNEpisodeRunner:
                 continue
             if state.done or state.out or ev_id not in present:
                 continue
-            if runtime.decisions[ev_id] >= self.config.max_decisions_per_ev:
+            # A final committed goal edge needs no additional policy decision.
+            on_goal_edge = (
+                getattr(self.agent, "uses_route_features", False)
+                and state.current_exit_edge is not None
+                and self.net.getEdge(state.current_exit_edge).getToNode().getID()
+                    == run_input.goal_nodes[ev_id]
+            )
+            if runtime.decisions[ev_id] >= self.config.max_decisions_per_ev and not on_goal_edge:
                 if self._ready_for_decision(ev_id):
                     runtime.total_steps += self._terminate_failure(
                         ev_id,
@@ -1231,6 +1247,7 @@ class DQNGNNEpisodeRunner:
         state.last_committed_exit_edge = state.current_exit_edge
         state.current_exit_edge = chosen_edge
         runtime.decisions[ev_id] += 1
+        state.decisions = runtime.decisions[ev_id]
 
         if self.logger:
             self.logger.step(snapshot.current_node, self.nid2idx[snapshot.current_node], snapshot.neighbors, state.last_action_nid)
@@ -1322,6 +1339,7 @@ class DQNGNNEpisodeRunner:
         state.prev_edge = snapshot.current_edge
         state.prev_decision_time = now
         runtime.decisions[ev_id] += 1
+        state.decisions = runtime.decisions[ev_id]
 
         if self.logger:
             self.logger.step(snapshot.current_node, self.nid2idx[snapshot.current_node], snapshot.neighbors, state.last_action_nid)

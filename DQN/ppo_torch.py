@@ -85,6 +85,8 @@ class TorchPPOAgentRefactored:
         memory_capacity: int = 20000,
         hidden_dim: int = 128,
         device: torch.device | None = None,
+        network: nn.Module | None = None,
+        target_kl: float | None = None,
     ) -> None:
         self.shape = shape
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -108,11 +110,12 @@ class TorchPPOAgentRefactored:
         self.kl_target = float(kl_target)
         self.grad_clip = float(grad_clip)
 
-        self.network = MaskedActorCritic(
+        self.target_kl = target_kl
+        self.network = (network if network is not None else MaskedActorCritic(
             shape.ppo_input_dim,
             shape.max_neighbors,
             hidden_dim=hidden_dim,
-        ).to(self.device)
+        )).to(self.device)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=lr, eps=1e-5)
         self.memory = PPORTrajectoryMemory(shape.max_neighbors, capacity=memory_capacity)
 
@@ -261,16 +264,24 @@ class TorchPPOAgentRefactored:
                 )
                 metrics["grad_norm"].append(float(torch.as_tensor(grad_norm).detach().cpu().item()))
             epochs_completed += 1
+            if self.target_kl is not None:
+                with torch.no_grad():
+                    new_logits, _ = self.network(rollout["states"], rollout["action_masks"])
+                    post_kl = kl_divergence(Categorical(logits=rollout["old_logits"]),
+                                             Categorical(logits=new_logits)).mean().item()
+                if post_kl > 1.5 * self.target_kl:
+                    break
 
         if not metrics["total_loss"]:
             raise RuntimeError("PyTorch PPO completed no minibatch gradient updates")
 
         mean_kl_value = float(np.mean(metrics["kl"]))
-        if mean_kl_value > 2.0 * self.kl_target:
-            self.kl_coeff *= 1.5
-        elif mean_kl_value < 0.5 * self.kl_target:
-            self.kl_coeff *= 0.5
-        self.kl_coeff = float(np.clip(self.kl_coeff, 1e-5, 1000.0))
+        if self.target_kl is None:
+            if mean_kl_value > 2.0 * self.kl_target:
+                self.kl_coeff *= 1.5
+            elif mean_kl_value < 0.5 * self.kl_target:
+                self.kl_coeff *= 0.5
+            self.kl_coeff = float(np.clip(self.kl_coeff, 1e-5, 1000.0))
 
         trajectory_ids = {
             int(trajectory[0]["trajectory_id"])
@@ -290,6 +301,9 @@ class TorchPPOAgentRefactored:
                 "kl_coeff": float(self.kl_coeff),
             }
         )
+        if self.target_kl is not None:
+            self.last_update_metrics["post_update_kl"] = float(post_kl)
+            self.last_update_metrics["kl_early_stop"] = float(epochs_completed < self.num_sgd_iter)
         return self.last_update_metrics["total_loss"]
 
     def _prepare_rollout_batch(

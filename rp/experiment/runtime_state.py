@@ -105,6 +105,8 @@ class EVRuntimeState:
     prev_edge: str | None = None
     data_t: Any = None
     recent_nodes: deque[int] = field(default_factory=lambda: deque(maxlen=4))
+    route_visit_counts: dict[int, int] = field(default_factory=dict)
+    route_recent_nodes: deque[int] = field(default_factory=lambda: deque(maxlen=16))
     internal_edges: list[str] | None = None
     exit_lane_id: str | None = None
     last_committed_exit_edge: str | None = None

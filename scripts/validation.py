@@ -18,6 +18,10 @@ from rp.experiment import (
 )
 from .run_experiment import (
     add_bottleneck_args,
+    apply_episode_limit_args,
+    add_reproducibility_args,
+    apply_reproducibility_args,
+    seed_everything,
     default_evaluation_checkpoint,
     apply_bottleneck_args,
     bootstrap_sumo_environment,
@@ -62,6 +66,9 @@ def parse_args() -> argparse.Namespace:
         default="proposed",
         help="Route-planning ablation variant.",
     )
+    parser.add_argument("--max-decisions-per-ev", type=int, default=None)
+    parser.add_argument("--max-simulation-steps", type=int, default=None)
+    add_reproducibility_args(parser)
     add_bottleneck_args(parser)
     return parser.parse_args()
 
@@ -92,6 +99,9 @@ def main() -> None:
     if args.use_gui:
         config = replace(config, use_gui=True)
     config = apply_bottleneck_args(config, args)
+    config = apply_episode_limit_args(config, args)
+    config = apply_reproducibility_args(config, args)
+    seed_everything(config.training_seed, deterministic=config.deterministic)
 
     checkpoint = args.checkpoint
     if checkpoint is None:
