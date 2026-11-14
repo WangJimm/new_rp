@@ -333,6 +333,8 @@ def restart_sumo_after_save(config: RuntimeConfig, enabled: bool, reason: str) -
         log_save_stage("sumo restart done")
 
 def describe_runtime(config: RuntimeConfig) -> str:
+    agent_type = resolve_rp_variant_spec(config.rp_variant).agent_type
+    uses_gnn = agent_type in {"gine", "gine_action", "gcn"}
     device = "cuda" if torch.cuda.is_available() else "cpu"
     validation_start, validation_interval = resolve_training_validation_schedule(config)
     return (
@@ -345,7 +347,7 @@ def describe_runtime(config: RuntimeConfig) -> str:
         f"validation_start_episode={validation_start}, "
         f"validation_interval={validation_interval}, "
         f"device={device}, "
-        f"use_gnn={config.use_gnn}, "
+        f"use_gnn={uses_gnn}, "
         f"revisit_penalty={config.revisit_penalty if config.revisit_penalty_enabled else 'disabled'}, "
         f"edqn_dijkstra_guidance={config.edqn_dijkstra_guidance_enabled}, "
         f"guide_probability={config.edqn_dijkstra_guide_probability}, "
@@ -691,6 +693,10 @@ def environment_matches_config(config: RuntimeConfig, payload: dict[str, Any]) -
 
 def default_evaluation_checkpoint(config: RuntimeConfig) -> Path:
     output = resolve_variant_output_dir(config)
+    if config.rp_variant == "dqn_baseline":
+        strict_checkpoint = output / "dqn_best_100pct_arrival_lowest_cost.pt"
+        arrival_checkpoint = output / "dqn_best_arrival.pt"
+        return strict_checkpoint if strict_checkpoint.is_file() else arrival_checkpoint
     if config.environment.name == "env":
         return output / "dqngnn_final.pt"
     prefix = resolve_rp_variant_spec(config.rp_variant).agent_type

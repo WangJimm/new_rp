@@ -60,6 +60,10 @@ class DQNAgentRefactored:
     - Prioritized Experience Replay
     """
 
+    # Only current/goal one-hots and local TLS observations enter this MLP.
+    # The runner still builds TLS before taking its non-graph observation path.
+    requires_graph_data = False
+
     def __init__(
         self,
         shape: DQNShapeConfig,
